@@ -39,3 +39,4 @@ android/local.properties
 # Original development scratch and planning notes are not part of app delivery
 .zcode/
 scratch/
+!.env.example

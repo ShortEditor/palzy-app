@@ -42,7 +42,7 @@ Use the same private release key for later updates and increase versionCode. SHA
 
 Public login/signup screenshots inspected. At 393px width, settled login screenshots have identical 393x951 geometry with only six pixels above a 10/255 difference threshold. No horizontal overflow. This is a desktop browser harness, not Android device proof. Authenticated feed pages are preserved in source but not visually checked with a real account in this build. No Android device/emulator test, actual sign-in, upload, data mutation or voice call completed. Owner testing is required before claiming full runtime parity.
 
-Build and six config/wiring tests pass; lint has zero errors and 26 warnings, mostly inherited unused variables. These checks are not a security audit. APK signature verifies integrity/publisher identity, not safety or Play Protect approval. Do not disable Play Protect to install.
+Build and seven config/wiring tests pass; lint has zero errors and 26 warnings, mostly inherited unused variables. These checks are not a security audit. APK signature verifies integrity/publisher identity, not safety or Play Protect approval. Do not disable Play Protect to install.
 
 Release integrity:
 - APK SHA256: 6347b631de68b932728aacb6a98281f901e26d789a36ae76b8b28ea63a4f2618

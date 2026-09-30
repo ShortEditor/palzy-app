@@ -11,3 +11,11 @@ test('Same database module and collections are retained',()=>{assert.match(read(
 test('Android microphone permission, native audio and cleartext restrictions',()=>{const m=read('android/app/src/main/AndroidManifest.xml');assert.match(m,/android.permission.RECORD_AUDIO/);assert.match(m,/android:usesCleartextTraffic="false"/);assert.match(read('src/contexts/CallContext.jsx'),/PalzyAudio.setSpeaker/);});
 test('Native build disables PWA registration and native installation prompt',()=>{assert.match(read('vite.config.js'),/PALZY_NATIVE/);assert.match(read('src/components/InstallBanner.jsx'),/if \(isNative\) return/);});
 test('Android image export uses honest chooser fallback',()=>{assert.match(read('src/utils/shareUtils.js'),/Save or share image/);assert.match(read('src/components/PostCard.jsx'),/Android save\/share chooser/);});
+test('Checked-in public config connects both SDKs to the same project',()=>{
+ const config=JSON.parse(read('android/app/google-services.json'));
+ const env=Object.fromEntries(read('.env.example').split('\n').filter(x=>x&&!x.startsWith('#')).map(x=>x.split('=')));
+ assert.equal(env.VITE_FIREBASE_PROJECT_ID,config.project_info.project_id);
+ assert.equal(env.VITE_FIREBASE_MESSAGING_SENDER_ID,config.project_info.project_number);
+ assert.equal(env.VITE_FIREBASE_API_KEY,config.client[0].api_key[0].current_key);
+ assert.ok(env.VITE_CLOUDINARY_CLOUD_NAME);assert.ok(env.VITE_CLOUDINARY_UPLOAD_PRESET);
+});
