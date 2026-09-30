@@ -66,3 +66,9 @@ Only updated Android callers invoke the push endpoint. Unchanged web callers can
 
 1.1 APK SHA256 f581e7b71c8d4c4ee9182f662e9daf9a0327d0b1b226dead818567d161fe3008
 1.1 AAB SHA256 47fbda4ba00669807941dfbfd54b3c6d1ac2fffe12b3740369af5117c7c33fb4
+
+### Push setup status, September 30, 2026
+
+Correct service-account credential was securely filled into Vercel's production Secret environment and deployed. Format/project/type/private-key metadata validated; no private value in source or artifacts. Server initialization succeeds. Both registration/call routes reject missing bearer with 401; fake bearer rejected with 401. Native origin CORS verified. Earlier invalid credential blocker is resolved. The 1.1 APK already uses this endpoint, so no binary update is needed for server-only configuration.
+
+Valid-user device registration, Firestore Admin access, FCM send permission and real background delivery are still unverified. Sign into 1.1, open Notifications and Enable call notifications, accept Android permission, and test a call from another 1.1 app. Do not call push fully working before this test. Web callers still do not trigger push. Native safe-area fix needs actual phone retest.
