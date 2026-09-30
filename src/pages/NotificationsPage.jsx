@@ -1,3 +1,4 @@
+import PushSettings from '../components/PushSettings'
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
@@ -87,6 +88,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="page-container" style={{ maxWidth: 640, margin: '0 auto', paddingBottom: 'var(--space-8)' }}>
+      <PushSettings />
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

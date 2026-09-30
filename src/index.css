@@ -1675,3 +1675,18 @@ body, .clay-card, .clay-input, .sidebar, .topbar, .bottom-nav, .page-header,
 @media (max-width: 680px) {
   .quote-editor-grid { grid-template-columns: 1fr !important; }
 }
+
+/* Native system areas only. Web layout/design stays unchanged. */
+.native-app { --native-top: 0px; --native-bottom: 0px; --native-keyboard: 0px; }
+.native-app body { padding-top: var(--native-top); padding-bottom: var(--native-bottom); }
+.native-app .auth-page { min-height: calc(100dvh - var(--native-top) - var(--native-bottom)); }
+.native-app .modal-overlay { top: var(--native-top); bottom: calc(var(--native-bottom) + var(--native-keyboard)); }
+.native-app .bottom-nav { bottom: calc(20px + var(--native-bottom) + var(--native-keyboard)); }
+@media (max-width: 900px) {
+  .native-app .topbar { top: var(--native-top) !important; }
+  .native-app .page-header { top: calc(var(--topbar-h) + var(--native-top)); }
+  .native-app .feed-column { padding-bottom: calc(110px + var(--native-bottom)); }
+}
+@media (max-width: 900px) {
+  .native-app .page-container { padding-top: var(--topbar-h); padding-bottom: calc(110px + var(--native-bottom)) !important; }
+}

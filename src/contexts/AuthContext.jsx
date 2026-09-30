@@ -1,3 +1,4 @@
+import { startPush, stopPush } from '../push'
 import { isNative } from '../native'
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication'
 import { createContext, useContext, useEffect, useState } from 'react'
@@ -30,6 +31,7 @@ export function AuthProvider({ children }) {
       setCurrentUser(user)
 
       if (user) {
+        startPush(user).catch(() => {})
         try {
           // Wait for the Firestore profile before marking loading = false
           const profile = await getUserProfile(user.uid)
@@ -103,6 +105,7 @@ export function AuthProvider({ children }) {
 
   // ── Logout ────────────────────────────────────────────────
   async function logout() {
+    await stopPush()
     await signOut(auth)
     setUserProfile(null)
   }

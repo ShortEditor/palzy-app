@@ -84,7 +84,7 @@ export function listenForIncomingCalls(userId, cb) {
   return onSnapshot(q, snap => {
     const activeCalls = snap.docs
       .map(d => d.data())
-      .filter(d => d.isCall && d.status === 'ringing')
+      .filter(d => d.isCall && d.status === 'ringing' && d.offer?.sdp && typeof d.createdAt === 'number' && Date.now() - d.createdAt < 45000 && Date.now() >= d.createdAt)
     cb(activeCalls)
   })
 }

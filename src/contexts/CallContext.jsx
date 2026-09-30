@@ -1,3 +1,4 @@
+import { notifyCall } from '../push'
 import { isNative, PalzyAudio } from '../native'
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from './AuthContext'
@@ -39,9 +40,9 @@ export function CallProvider({ children }) {
     if (!currentUser?.uid) return
     const unsub = listenForIncomingCalls(currentUser.uid, (calls) => {
       if (calls.length === 0) return
-      if (callState !== 'idle') {
+      if (callIdRef.current) {
         // Already busy — auto-decline extra calls
-        calls.forEach(c => setCallStatus(c.callId, 'declined').catch(() => {}))
+        calls.filter(c => c.callId !== callIdRef.current).forEach(c => setCallStatus(c.callId, 'declined').catch(() => {}))
         return
       }
       const call = calls[0]
@@ -168,6 +169,7 @@ export function CallProvider({ children }) {
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
       await setCallOffer(callId, { type: offer.type, sdp: offer.sdp })
+      notifyCall(callId).catch(() => {})
 
       // Listen for answer + callee ICE
       callUnsubRef.current = listenToCall(callId, async (data) => {
@@ -188,7 +190,7 @@ export function CallProvider({ children }) {
 
       // Auto-cancel if no answer in 45 seconds
       setTimeout(() => {
-        if (callIdRef.current === callId && callState === 'ringing_out') {
+        if (callIdRef.current === callId && !pc.remoteDescription) {
           setCallStatus(callId, 'missed').catch(() => {})
           toast('No answer', { icon: <Icon name="phoneOff" size={18} /> })
           cleanup()

@@ -51,3 +51,18 @@ Release integrity:
 - APK v1/v2 verification passes. AAB jarsigner verifies with self-signed/no-timestamp/JAR metadata warnings; not a store submission.
 
 The web and Android Firebase client API keys differ, as expected for separately registered clients; both configs identify the same project number/ID. The web JS uses the original web key and native Google uses the supplied Android key. Client API keys are not server credentials.
+
+## Update 1.1 / code 2
+
+No redesign. Native density-adjusted window inset variables protect fixed header, bottom navigation and modals from status/navigation/keyboard areas. Owner Vivo screenshot identified clipping in 1.0. Fixture with 32px top/42px bottom inspected: header starts at y32, navigation ends 20px above system bottom area. Actual Vivo retest required.
+
+FCM client and authenticated send service prepared at https://palzy-push.vercel.app . Notifications page has an explicit enable button and Android13 permission prompt. Device token registration is authenticated, server-only, private to Admin SDK; no token stored in publicly readable users/likes documents. No existing Firestore rules change. Logout removes device registration. Incoming-call alerts have a 45-second TTL and tap opens Palzy to answer; no auto-answer/full-screen/background audio service. Android force-stop, permissions, network, OEM battery limits and private space can prevent/delay delivery.
+
+IMPORTANT: Push is NOT enabled end to end yet. The supplied secure credential value was not valid service-account JSON; server refuses to initialize. Awaiting correct entire JSON through the secure entry. Do not send it in chat or add it to source. App settings will report registration failure until server credential is replaced. No real push received/sent test completed.
+
+Service uses Firebase ID token verification, current caller/recipient checks, fresh ringing call + offer validation, caller-prefixed ID validation, per-user/per-pair rate limits and one-send receipt. Server collection names: palzyPushDevices, palzyPushLimits, palzyPushReceipts. Existing rules deny client access by default. Firebase Admin credentials live only in Vercel production Secret env. FCM and Vercel Hobby within their free limits, no Cloud Functions/Blaze/billing enabled. Rate-limit documents are durable and can consume free quota; this is not an unlimited or independently audited service.
+
+Only updated Android callers invoke the push endpoint. Unchanged web callers cannot send background alerts yet; web-to-app support requires an approved separate web patch. In-app original notifications remain unchanged. Stale unoffered/expired calls are ignored; duplicate call listener updates no longer decline the same pending call. Twelve config/wiring/unit tests pass; native build/signatures pass, but device/auth/call/push tests are still pending.
+
+1.1 APK SHA256 f581e7b71c8d4c4ee9182f662e9daf9a0327d0b1b226dead818567d161fe3008
+1.1 AAB SHA256 47fbda4ba00669807941dfbfd54b3c6d1ac2fffe12b3740369af5117c7c33fb4
