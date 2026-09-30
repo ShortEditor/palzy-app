@@ -49,3 +49,5 @@ Release integrity:
 - AAB SHA256: 5bc1b90bc8815d32a639976c9c8b1e055bb27bbfb894b5d1e0917067afb5871d
 - Same certificate SHA256: 84cf73cb658fb36ee9488192b71f9fd8a1b5ade8446fe126d5d5719adce56a8b
 - APK v1/v2 verification passes. AAB jarsigner verifies with self-signed/no-timestamp/JAR metadata warnings; not a store submission.
+
+The web and Android Firebase client API keys differ, as expected for separately registered clients; both configs identify the same project number/ID. The web JS uses the original web key and native Google uses the supplied Android key. Client API keys are not server credentials.
