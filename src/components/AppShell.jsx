@@ -1,0 +1,309 @@
+import { useState, useEffect } from 'react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
+import { CallProvider, useCall } from '../contexts/CallContext'
+import { listenUnreadCount } from '../firebase/notifications'
+import Icon from './Icon'
+import Avatar from './Avatar'
+import SuggestionsSidebar from './SuggestionsSidebar'
+import VerifiedBadge from './VerifiedBadge'
+import InstallBanner from './InstallBanner'
+import NotificationBell from './NotificationBell'
+import IncomingCallModal from './IncomingCallModal'
+import ActiveCallUI from './ActiveCallUI'
+import QuickCallModal from './QuickCallModal'
+import MobileMenuModal from './MobileMenuModal'
+import toast from 'react-hot-toast'
+
+function AppShellInner({ children }) {
+  const { currentUser, userProfile, isAdmin, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [quickCallOpen, setQuickCallOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
+
+  useEffect(() => {
+    if (!currentUser?.uid) return
+    const unsub = listenUnreadCount(currentUser.uid, setUnreadNotifications)
+    return unsub
+  }, [currentUser?.uid])
+
+  const showSuggestions = location.pathname === '/'
+
+  async function handleLogout() {
+    await logout()
+    navigate('/login', { replace: true })
+    toast.success('Logged out.')
+  }
+
+  const navItems = [
+    { to: '/',               icon: 'home',    label: 'Home'          },
+    { to: '/explore',        icon: 'search',  label: 'Explore'       },
+    { to: '/notifications',  icon: 'bell',    label: 'Notifications', count: unreadNotifications },
+    { to: '/campus',         icon: 'book',    label: 'Campus'        },
+    { to: `/u/${userProfile?.username}`, icon: 'user', label: 'Profile' },
+  ]
+
+  const isDark = theme === 'dark'
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100dvh' }}>
+
+      {/* ── Left Sidebar (desktop) ──────────────────────────── */}
+      <aside className="sidebar">
+        {/* Logo */}
+        <div className="sidebar-logo">
+          <img
+            src="/logo-header.png"
+            alt="Palzy"
+            style={{ height: 32, width: 'auto', objectFit: 'contain' }}
+          />
+          <span className="sidebar-logo-text">Palzy</span>
+        </div>
+
+        {/* Nav items */}
+        {navItems.map(({ to, icon, label, count }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/'}
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+          >
+            <span className="nav-item-icon" style={{ position: 'relative' }}>
+              <Icon name={icon} size={20} />
+              {count > 0 && (
+                <span style={{
+                  position: 'absolute', top: -2, right: -2,
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: 'var(--brand-primary)',
+                }} />
+              )}
+            </span>
+            <span style={{ flex: 1 }}>{label}</span>
+            {count > 0 && (
+              <span style={{
+                background: 'var(--brand-primary)', color: '#fff',
+                fontSize: 10, fontWeight: 700,
+                padding: '2px 7px', borderRadius: 99,
+                lineHeight: 1.2,
+              }}>
+                {count > 9 ? '9+' : count}
+              </span>
+            )}
+          </NavLink>
+        ))}
+
+        {/* Quick Call Button desktop */}
+        <button
+          className="nav-item"
+          onClick={() => setQuickCallOpen(true)}
+          style={{ cursor: 'pointer', border: 'none', background: 'none', textAlign: 'left', width: '100%' }}
+        >
+          <span className="nav-item-icon" style={{ color: '#30d158' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+            </svg>
+          </span>
+          Quick Call
+        </button>
+
+        {/* Post Vibe CTA */}
+        <button
+          id="btn-compose-sidebar"
+          className="btn btn-primary"
+          style={{
+            marginTop: 'var(--space-4)',
+            width: '100%',
+            borderRadius: 'var(--radius-full)',
+            fontFamily: 'var(--font-display)',
+            fontSize: 'var(--font-size-base)',
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
+            padding: '0.8rem 1.5rem',
+          }}
+          onClick={() => {
+            navigate('/')
+            // Dispatch after a tick so FeedPage + CreatePost are mounted
+            setTimeout(() => window.dispatchEvent(new CustomEvent('focusComposer')), 100)
+          }}
+        >
+          <Icon name="plus" size={18} /> Post Vibe
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Admin link */}
+        {isAdmin && (
+          <NavLink
+            to="/admin"
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            style={{ color: 'var(--brand-red)', marginBottom: 'var(--space-1)' }}
+          >
+            <span className="nav-item-icon"><Icon name="zap" size={20} /></span>
+            Admin Panel
+          </NavLink>
+        )}
+
+        {/* Theme toggle */}
+        <button
+          id="btn-theme-toggle"
+          className="nav-item"
+          onClick={toggleTheme}
+          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          style={{ marginBottom: 'var(--space-2)' }}
+        >
+          <span className="nav-item-icon">
+            <Icon name={isDark ? 'sun' : 'moon'} size={20} />
+          </span>
+          {isDark ? 'Light Mode' : 'Dark Mode'}
+        </button>
+
+        {/* User strip + logout */}
+        {userProfile && (
+          <div className="sidebar-user-strip">
+            <Avatar src={userProfile.photoURL} name={userProfile.name} size="md" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} className="truncate font-semibold text-sm">
+                <span className="truncate">{userProfile.name}</span>
+                {userProfile.isVerified && <VerifiedBadge size={13} />}
+              </div>
+              <div className="truncate text-xs text-muted">@{userProfile.username}</div>
+            </div>
+            <button
+              id="btn-logout"
+              className="btn btn-ghost btn-icon"
+              onClick={handleLogout}
+              title="Logout"
+              aria-label="Logout"
+            >
+              <Icon name="logout" size={18} />
+            </button>
+          </div>
+        )}
+      </aside>
+
+      {/* ── Main + Right ────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
+        <main className="main-content" style={{ flex: 1, minWidth: 0 }}>
+
+          {/* Mobile topbar */}
+          <header className="topbar">
+            <span className="topbar-logo">
+              <img
+                src="/logo-header.png"
+                alt="Palzy"
+                style={{ height: 28, width: 'auto', objectFit: 'contain' }}
+              />
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              {/* Notification bell */}
+              <NotificationBell />
+
+              {/* Theme toggle mobile */}
+              <button
+                id="btn-theme-toggle-mobile"
+                className="btn btn-ghost btn-icon"
+                onClick={toggleTheme}
+                aria-label={isDark ? 'Light mode' : 'Dark mode'}
+              >
+                <Icon name={isDark ? 'sun' : 'moon'} size={20} />
+              </button>
+
+
+              {userProfile && (
+                <NavLink to={`/u/${userProfile.username}`}>
+                  <Avatar src={userProfile.photoURL} name={userProfile.name} size="sm" />
+                </NavLink>
+              )}
+              <button
+                id="btn-mobile-menu"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setMobileMenuOpen(true)}
+                title="Menu"
+                aria-label="Open menu"
+              >
+                <Icon name="menu" size={20} />
+              </button>
+            </div>
+          </header>
+
+          {children}
+
+          {/* Mobile bottom nav */}
+          <nav className="bottom-nav" aria-label="Mobile navigation">
+            <NavLink to="/" end className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}>
+              <Icon name="home" size={24} />
+              <span>Home</span>
+            </NavLink>
+
+            <NavLink to="/explore" className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}>
+              <Icon name="search" size={24} />
+              <span>Explore</span>
+            </NavLink>
+
+            {/* Quick Call Button in bottom nav */}
+            <button
+              onClick={() => setQuickCallOpen(true)}
+              className="bottom-nav-item"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#30d158' }}
+              title="Quick Call"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+              </svg>
+              <span style={{ color: '#30d158', fontWeight: 700 }}>Call</span>
+            </button>
+
+            <NavLink to="/campus" className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}>
+              <Icon name="book" size={24} />
+              <span>Campus</span>
+            </NavLink>
+
+            <NavLink to={`/u/${userProfile?.username}`} className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}>
+              <Icon name="user" size={24} />
+              <span>Profile</span>
+            </NavLink>
+          </nav>
+
+        </main>
+
+        {/* ── Right sidebar: suggestions (desktop only) ──────── */}
+        {showSuggestions && (
+          <div className="suggestions-col">
+            <SuggestionsSidebar />
+          </div>
+        )}
+      </div>
+      <InstallBanner />
+
+      {/* ── Voice call overlays (globally available) ── */}
+      <IncomingCallModal />
+      <ActiveCallUI />
+      <QuickCallModal isOpen={quickCallOpen} onClose={() => setQuickCallOpen(false)} />
+      <MobileMenuModal isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
+
+      {/* Hidden audio element for remote voice stream */}
+      <audio ref={useCallAudio()} autoPlay playsInline style={{ display: 'none' }} />
+    </div>
+  )
+}
+
+function useCallAudio() {
+  try {
+    const { remoteAudioRef } = useCall()
+    return remoteAudioRef
+  } catch {
+    return null
+  }
+}
+
+export default function AppShell({ children }) {
+  return (
+    <CallProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </CallProvider>
+  )
+}

@@ -1,0 +1,753 @@
+import { isNative } from '../native'
+import { saveImage } from '../utils/shareUtils'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { useCall } from '../contexts/CallContext'
+import { getUserByUsername, updateUserProfile } from '../firebase/users'
+import { getUserPosts, batchCheckLikes } from '../firebase/posts'
+import { renderRecapCard } from '../utils/recapCardRenderer'
+import { isFollowing, followUser, unfollowUser, syncFollowCounts } from '../firebase/follows'
+import { uploadImage } from '../utils/cloudinary'
+import PostCard from '../components/PostCard'
+import Avatar from '../components/Avatar'
+import Icon from '../components/Icon'
+import VerifiedBadge from '../components/VerifiedBadge'
+import FollowButton from '../components/FollowButton'
+import FollowListModal from '../components/FollowListModal'
+import ImageCropModal from '../components/ImageCropModal'
+import toast from 'react-hot-toast'
+
+const BRANCHES = ['CSE', 'ECE']
+const YEARS    = ['1st Year', '2nd Year', '3rd Year']
+
+export default function ProfilePage() {
+  const { username } = useParams()
+  const { currentUser, userProfile, refreshProfile } = useAuth()
+  const navigate = useNavigate()
+
+  const [profile, setProfile]       = useState(null)
+  const [posts, setPosts]           = useState([])
+  const [likeMap, setLikeMap]       = useState({})
+  const [cursor, setCursor]         = useState(null)
+  const [hasMore, setHasMore]       = useState(true)
+  const [loading, setLoading]       = useState(true)
+  const [loadingPosts, setLoadingPosts] = useState(false)
+  const [notFound, setNotFound]     = useState(false)
+
+  // Edit modal
+  const [editing, setEditing]       = useState(false)
+  const [editBio, setEditBio]       = useState('')
+  const [editBranch, setEditBranch] = useState('')
+  const [editYear, setEditYear]     = useState('')
+  const [editAvatar, setEditAvatar] = useState(null)
+  const [editAvatarPreview, setEditAvatarPreview] = useState('')
+  const [editBanner, setEditBanner] = useState(null)
+  const [editBannerPreview, setEditBannerPreview] = useState('')
+  const [saving, setSaving]         = useState(false)
+  const [editShowBranch, setEditShowBranch] = useState(true)
+  const [editShowYear, setEditShowYear]     = useState(true)
+
+  // Crop modal
+  const [cropTarget, setCropTarget] = useState(null) // 'avatar' | 'banner' | null
+  const [rawCropSrc, setRawCropSrc] = useState('')   // object URL of the raw picked image
+
+  const isOwn = currentUser && userProfile?.username === username
+  const [followState, setFollowState] = useState(false)
+  const [followModal, setFollowModal] = useState(null) // 'followers' | 'following' | null
+
+  // ─── Load profile ─────────────────────────────────────────
+  useEffect(() => {
+    setLoading(true)
+    setPosts([])
+    setCursor(null)
+    setHasMore(true)
+
+    getUserByUsername(username).then(async p => {
+      if (!p) { setNotFound(true); setLoading(false); return }
+      
+      // Fetch fresh, accurate follow counts and heal database if they drifted
+      const syncedCounts = await syncFollowCounts(p.uid)
+      if (syncedCounts) {
+        p.followerCount = syncedCounts.followerCount
+        p.followingCount = syncedCounts.followingCount
+      }
+      
+      setProfile(p)
+      // Check follow state for non-own profiles
+      if (currentUser && currentUser.uid !== p.uid) {
+        const state = await isFollowing(currentUser.uid, p.uid)
+        setFollowState(state)
+      }
+      setLoading(false)
+    })
+  }, [username])
+
+  // ─── Load posts once profile is loaded ────────────────────
+  const fetchPosts = useCallback(async (cur = null) => {
+    if (!profile) return
+    if (cur === null) setLoadingPosts(true)
+    try {
+      const { posts: newPosts, nextCursor, hasMore: more } = await getUserPosts(profile.uid, cur)
+      const newLikeMap = await batchCheckLikes(newPosts.map(p => p.id), currentUser.uid)
+      setLikeMap(prev => ({ ...prev, ...newLikeMap }))
+      setPosts(prev => cur ? [...prev, ...newPosts] : newPosts)
+      setCursor(nextCursor)
+      setHasMore(more)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoadingPosts(false)
+    }
+  }, [profile, currentUser.uid])
+
+  useEffect(() => { if (profile) fetchPosts(null) }, [profile])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  function openEdit() {
+    setEditBio(profile.bio ?? '')
+    setEditBranch(profile.branch ?? '')
+    setEditYear(profile.year ?? '')
+    setEditShowBranch(profile.showBranch !== false)
+    setEditShowYear(profile.showYear !== false)
+    setEditAvatarPreview(profile.photoURL ?? '')
+    setEditBannerPreview(profile.bannerURL ?? '')
+    setEditAvatar(null)
+    setEditBanner(null)
+    setEditing(true)
+  }
+
+  function handleEditAvatarChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setRawCropSrc(URL.createObjectURL(file))
+    setCropTarget('avatar')
+    // Reset input so the same file can be re-selected
+    e.target.value = ''
+  }
+
+  function handleEditBannerChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setRawCropSrc(URL.createObjectURL(file))
+    setCropTarget('banner')
+    e.target.value = ''
+  }
+
+  function handleCropDone(croppedFile) {
+    const preview = URL.createObjectURL(croppedFile)
+    if (cropTarget === 'avatar') {
+      setEditAvatar(croppedFile)
+      setEditAvatarPreview(preview)
+    } else {
+      setEditBanner(croppedFile)
+      setEditBannerPreview(preview)
+    }
+    setCropTarget(null)
+    setRawCropSrc('')
+  }
+
+  function handleCropCancel() {
+    setCropTarget(null)
+    setRawCropSrc('')
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      let photoURL  = profile.photoURL
+      let bannerURL = profile.bannerURL
+      if (editAvatar) photoURL  = await uploadImage(editAvatar, 'avatars')
+      if (editBanner) bannerURL = await uploadImage(editBanner, 'banners')
+      await updateUserProfile(profile.uid, {
+        bio: editBio,
+        branch: editBranch,
+        year: editYear,
+        photoURL,
+        bannerURL,
+        showBranch: editShowBranch,
+        showYear: editShowYear
+      })
+      if (isOwn) await refreshProfile()
+      setProfile(prev => ({
+        ...prev,
+        bio: editBio,
+        branch: editBranch,
+        year: editYear,
+        photoURL,
+        bannerURL,
+        showBranch: editShowBranch,
+        showYear: editShowYear
+      }))
+      setEditing(false)
+      toast.success('Profile updated!')
+    } catch {
+      toast.error('Could not save changes.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handlePostDeleted(postId) {
+    setPosts(prev => prev.filter(p => p.id !== postId))
+  }
+
+  async function handleGenerateRecap() {
+    if (!isOwn || !profile) return
+    const toastId = toast.loading('Generating your recap...')
+    try {
+      // Count this week's posts for the user
+      const { posts: weekPosts } = await getUserPosts(profile.uid)
+      const now = new Date()
+      const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1
+      const weekStart = new Date(now)
+      weekStart.setDate(now.getDate() - dayOfWeek)
+      weekStart.setHours(0, 0, 0, 0)
+      const weekCount = weekPosts.filter(p => {
+        const d = p.createdAt?.toDate?.() ?? new Date(0)
+        return d >= weekStart
+      }).length
+      const likesReceived = weekPosts.reduce((sum, p) => sum + (p.likeCount ?? 0), 0)
+
+      const dataUrl = await renderRecapCard({
+        name: profile.name,
+        username: profile.username,
+        photoURL: profile.photoURL,
+        stats: {
+          postCount: weekCount,
+          likesReceived,
+          streakCount: profile.streakCount ?? 0,
+          newFollowers: profile.followerCount ?? 0,
+        },
+      })
+      if (isNative) {
+        await saveImage(dataUrl, `palzy-recap-${profile.username}.png`)
+        toast.success('Recap opened in Android save/share chooser.', { id: toastId })
+        return
+      }
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `palzy-recap-${profile.username}.png`
+      a.click()
+      toast.success('Recap card downloaded!', { id: toastId, icon: <Icon name="confetti" size={16} /> })
+    } catch (err) {
+      console.error(err)
+      toast.error('Could not generate recap.', { id: toastId })
+    }
+  }
+
+  if (loading) return (
+    <div className="feed-column" style={{ display: 'flex', justifyContent: 'center', paddingTop: 'var(--space-12)' }}>
+      <div className="spinner spinner-lg" />
+    </div>
+  )
+
+  if (notFound) return (
+    <div className="feed-column">
+      <div className="page-header">
+        <button className="btn btn-ghost btn-icon" onClick={() => navigate(-1)}><Icon name="arrow_left" size={20} /></button>
+        <h1>Profile</h1>
+      </div>
+      <div className="empty-state" style={{ marginTop: 'var(--space-12)' }}>
+        <div className="empty-state-icon" style={{ color: 'var(--text-muted)' }}><Icon name="ghost" size={40} /></div>
+        <div className="empty-state-title">User not found</div>
+        <div className="empty-state-body">@{username} doesn't exist yet.</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="feed-column">
+      {/* Header */}
+      <div className="page-header">
+        <button className="btn btn-ghost btn-icon" onClick={() => navigate(-1)} aria-label="Go back">
+          <Icon name="arrow_left" size={20} />
+        </button>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {profile.name}
+          {profile.isVerified && <VerifiedBadge size={18} />}
+        </h1>
+      </div>
+
+      {/* Banner */}
+      <div
+        className="profile-banner"
+        style={{
+          backgroundImage: profile.bannerURL ? `url(${profile.bannerURL})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          position: 'relative',
+        }}
+      />
+
+      {/* Profile info */}
+      <div className="profile-info">
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <div className="profile-avatar-wrap">
+            <Avatar src={profile.photoURL} name={profile.name} size="2xl" />
+          </div>
+          {isOwn && (
+            <button id="btn-edit-profile" className="btn btn-outline btn-sm" onClick={openEdit}>
+              <Icon name="pencil" size={14} /> Edit profile
+            </button>
+          )}
+        </div>
+
+        <div className="profile-name" style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {profile.name}
+          {profile.isVerified && <VerifiedBadge size={20} />}
+        </div>
+        <div className="profile-handle">@{profile.username}</div>
+        {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+
+        {/* Follower / Following counts — clickable to open list */}
+        <div style={{ display: 'flex', gap: 'var(--space-5)', marginTop: 'var(--space-3)', fontSize: 'var(--font-size-sm)' }}>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: 0, fontWeight: 'normal', fontSize: 'var(--font-size-sm)' }}
+            onClick={() => setFollowModal('followers')}
+          >
+            <strong style={{ color: 'var(--text-primary)' }}>{profile.followerCount ?? 0}</strong>&nbsp;
+            <span style={{ color: 'var(--text-muted)' }}>Followers</span>
+          </button>
+          <button
+            className="btn btn-ghost"
+            style={{ padding: 0, fontWeight: 'normal', fontSize: 'var(--font-size-sm)' }}
+            onClick={() => setFollowModal('following')}
+          >
+            <strong style={{ color: 'var(--text-primary)' }}>{profile.followingCount ?? 0}</strong>&nbsp;
+            <span style={{ color: 'var(--text-muted)' }}>Following</span>
+          </button>
+        </div>
+
+        {/* Follow + Call buttons for non-own profiles */}
+        {!isOwn && (
+          <div style={{ marginTop: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <FollowButton
+              targetUid={profile.uid}
+              initialState={followState}
+              onToggle={followed => {
+                setFollowState(followed)
+                setProfile(prev => ({
+                  ...prev,
+                  followerCount: (prev.followerCount ?? 0) + (followed ? 1 : -1)
+                }))
+              }}
+              size="md"
+            />
+            <CallButtonOnProfile profile={profile} />
+          </div>
+        )}
+
+        <div className="profile-meta-row">
+          {profile.branch && profile.showBranch !== false && (
+            <span className="profile-meta-item badge badge-brand">{profile.branch}</span>
+          )}
+          {profile.year && profile.showYear !== false && (
+            <span className="profile-meta-item badge badge-green">{profile.year}</span>
+          )}
+          {/* Streak badge */}
+          {(profile.streakCount ?? 0) > 0 && (
+            <span
+              className="profile-meta-item"
+              title={`${profile.streakCount}-day posting streak${profile.streakBestEver ? ` · Best: ${profile.streakBestEver}` : ''}`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: 'linear-gradient(135deg,rgba(249,115,22,0.15),rgba(245,158,11,0.15))',
+                border: '1px solid rgba(249,115,22,0.3)',
+                color: '#f97316', borderRadius: 99, padding: '3px 10px',
+                fontSize: 'var(--font-size-xs)', fontWeight: 700, cursor: 'default',
+              }}
+            >
+              <Icon name="fire" size={13} /> {profile.streakCount}
+            </span>
+          )}
+          {/* Weekly recap — own profile only */}
+          {isOwn && (
+            <button
+              id="btn-generate-recap"
+              className="btn btn-ghost btn-sm"
+              onClick={handleGenerateRecap}
+              title="Download your weekly recap card"
+              style={{ fontSize: 'var(--font-size-xs)', padding: '3px 10px', borderRadius: 99, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            >
+              <Icon name="chart" size={13} /> Recap
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="divider" style={{ margin: '0 var(--space-5)' }} />
+
+      {/* Posts tab header */}
+      <div style={{ padding: 'var(--space-4) var(--space-5)', fontWeight: 600, fontSize: 'var(--font-size-sm)', color: 'var(--brand-primary-dim)', borderBottom: '2px solid var(--brand-primary)' }}>
+        Posts
+      </div>
+
+      {/* Posts */}
+      {loadingPosts ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-8)' }}><div className="spinner" /></div>
+      ) : posts.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon" style={{ color: 'var(--text-muted)' }}><Icon name="pencil" size={40} /></div>
+          <div className="empty-state-body">{isOwn ? "You haven't posted anything yet." : `@${username} hasn't posted yet.`}</div>
+        </div>
+      ) : (
+        <>
+          {posts.map(post => (
+            <PostCard
+              key={post.id}
+              post={post}
+              authorProfile={profile}
+              isLiked={likeMap[post.id] ?? false}
+              onDelete={handlePostDeleted}
+            />
+          ))}
+          {hasMore && (
+            <div style={{ padding: 'var(--space-4)', textAlign: 'center' }}>
+              <button className="btn btn-outline btn-sm" onClick={() => fetchPosts(cursor)}>Load more</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Support & Legal Links */}
+      <div style={{
+        margin: 'var(--space-8) var(--space-4) var(--space-8)',
+        padding: 'var(--space-4)',
+        background: 'var(--bg-secondary)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--border-subtle)',
+        textAlign: 'center',
+        fontSize: 'var(--font-size-xs)',
+        color: 'var(--text-muted)',
+      }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px 16px', marginBottom: 'var(--space-2)' }}>
+          <Link to="/about" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }}>About</Link>
+          <Link to="/help" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }}>Help Center</Link>
+          <Link to="/privacy" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }}>Privacy Policy</Link>
+          <Link to="/terms" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }}>Terms of Service</Link>
+        </div>
+        <div>Palzy · Made for college · © 2026</div>
+      </div>
+
+      {/* Edit Profile Modal */}
+      {editing && (
+        <EditProfileDialog onClose={() => setEditing(false)}>
+          <div className="modal-header">
+            <span className="font-semibold">Edit Profile</span>
+            <button className="btn btn-ghost btn-icon" onClick={() => setEditing(false)} aria-label="Close"><Icon name="close" size={18} /></button>
+          </div>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+            {/* Banner upload */}
+            <div className="form-group">
+              <label className="form-label">Cover Banner</label>
+              <label
+                htmlFor="edit-banner"
+                style={{
+                  display: 'block', width: '100%', height: 100,
+                  borderRadius: 'var(--radius-md)', overflow: 'hidden',
+                  cursor: 'pointer', position: 'relative',
+                  background: editBannerPreview
+                    ? `url(${editBannerPreview}) center/cover`
+                    : 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                  border: '1.5px dashed var(--border-normal)',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(0,0,0,0.35)',
+                  color: '#fff', fontSize: 'var(--font-size-xs)', gap: 6,
+                }}>
+                  <Icon name="image" size={16} />
+                  {editBannerPreview ? 'Change banner' : 'Upload banner image'}
+                </div>
+              </label>
+              <input id="edit-banner" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleEditBannerChange} />
+            </div>
+
+            {/* Avatar */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <label htmlFor="edit-avatar" style={{ cursor: 'pointer', position: 'relative' }}>
+                <Avatar src={editAvatarPreview} name={profile.name} size="xl" />
+                <div style={{ position: 'absolute', bottom: 0, right: 0, background: 'var(--brand-primary)', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--bg-card)' }}>
+                  <Icon name="pencil" size={12} />
+                </div>
+              </label>
+              <input id="edit-avatar" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleEditAvatarChange} />
+              <span className="text-xs text-muted">Tap to change photo</span>
+            </div>
+
+            {/* Bio */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="edit-bio">Bio</label>
+              <textarea id="edit-bio" className="form-input form-textarea" value={editBio} onChange={e => setEditBio(e.target.value)} maxLength={160} rows={3} placeholder="Tell your batchmates about yourself…" />
+              <span className="form-hint">{editBio.length}/160</span>
+            </div>
+
+            {/* Branch & Year */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-branch">Branch</label>
+                <select id="edit-branch" className="form-input form-select" value={editBranch} onChange={e => setEditBranch(e.target.value)}>
+                  <option value="">None</option>
+                  {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-year">Year</label>
+                <select id="edit-year" className="form-input form-select" value={editYear} onChange={e => setEditYear(e.target.value)}>
+                  <option value="">None</option>
+                  {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Academic Visibility */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <span className="form-label" style={{ marginBottom: 2 }}>Academic Visibility</span>
+              <label className="flex items-center gap-2" style={{ fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={editShowBranch}
+                  onChange={e => setEditShowBranch(e.target.checked)}
+                  style={{
+                    accentColor: 'var(--brand-primary)',
+                    width: 16, height: 16, cursor: 'pointer'
+                  }}
+                />
+                Show Branch ({editBranch || 'None'}) on profile
+              </label>
+              <label className="flex items-center gap-2" style={{ fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--text-primary)', marginTop: 2 }}>
+                <input
+                  type="checkbox"
+                  checked={editShowYear}
+                  onChange={e => setEditShowYear(e.target.checked)}
+                  style={{
+                    accentColor: 'var(--brand-primary)',
+                    width: 16, height: 16, cursor: 'pointer'
+                  }}
+                />
+                Show Year ({editYear || 'None'}) on profile
+              </label>
+            </div>
+          </div>
+          <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+            <button id="btn-cancel-edit" className="btn btn-outline" onClick={() => setEditing(false)}>Cancel</button>
+            <button id="btn-save-profile" className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? <><div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Saving…</> : 'Save changes'}
+            </button>
+          </div>
+        </EditProfileDialog>
+      )}
+
+      {/* Image Crop Modal */}
+      {cropTarget && rawCropSrc && (
+        <ImageCropModal
+          imageSrc={rawCropSrc}
+          aspect={cropTarget === 'avatar' ? 1 : 3}
+          cropShape={cropTarget === 'avatar' ? 'round' : 'rect'}
+          title={cropTarget === 'avatar' ? 'Crop Profile Photo' : 'Crop Cover Banner'}
+          onCrop={handleCropDone}
+          onCancel={handleCropCancel}
+        />
+      )}
+      {/* Followers / Following modal */}
+      {followModal && profile && (
+        <FollowListModal
+          uid={profile.uid}
+          tab={followModal}
+          onClose={() => setFollowModal(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Focus-trapping edit profile dialog ─────────────────────────
+function EditProfileDialog({ onClose, children }) {
+  const dialogRef = useRef(null)
+  const previousFocus = useRef(null)
+
+  useEffect(() => {
+    // Remember what had focus before opening
+    previousFocus.current = document.activeElement
+
+    // Focus the first focusable element inside the dialog
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    const focusable = dialog.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (focusable.length) focusable[0].focus()
+
+    // Escape key handler
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') { onClose(); return }
+
+      // Focus trap: keep Tab inside the dialog
+      if (e.key === 'Tab') {
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus() }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus() }
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    // Prevent body scroll while modal is open
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = ''
+      // Return focus to the element that triggered the dialog
+      if (previousFocus.current && previousFocus.current.focus) {
+        previousFocus.current.focus()
+      }
+    }
+  }, [onClose])
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="modal-box animate-slide-up"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit Profile"
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ── SVG Icons ──────────────────────────────────────────────────
+const PhoneIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+  </svg>
+)
+
+const InfoIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+  </svg>
+)
+
+// ── Inline call button + info note ────────────────────────────
+function CallButtonOnProfile({ profile }) {
+  const { callState, startCall } = useCall()
+  const [showInfo, setShowInfo] = useState(false)
+  const busy = callState !== 'idle'
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      {/* Call button */}
+      <button
+        onClick={() => startCall(profile.uid, profile)}
+        disabled={busy}
+        title={busy ? 'Already in a call' : `Call ${profile.name}`}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '8px 18px', borderRadius: 20,
+          background: busy ? 'var(--bg-input)' : 'linear-gradient(135deg, #30d158, #1a9944)',
+          color: busy ? 'var(--text-muted)' : '#fff',
+          border: 'none', cursor: busy ? 'not-allowed' : 'pointer',
+          fontWeight: 700, fontSize: 14,
+          boxShadow: busy ? 'none' : '0 4px 14px rgba(48,209,88,0.4)',
+          transition: 'all 0.15s',
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        <PhoneIcon size={16} />
+        {busy ? 'Busy' : 'Call'}
+      </button>
+
+      {/* Info toggle button */}
+      <button
+        onClick={() => setShowInfo(v => !v)}
+        title="How calls work"
+        style={{
+          width: 28, height: 28, borderRadius: '50%', border: 'none',
+          background: showInfo ? 'var(--brand)' : 'var(--bg-input)',
+          color: showInfo ? '#fff' : 'var(--text-muted)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.15s', flexShrink: 0,
+        }}
+      >
+        <InfoIcon size={14} />
+      </button>
+
+      {/* Info panel */}
+      {showInfo && (
+        <div style={{
+          position: 'absolute', top: '110%', left: 0,
+          zIndex: 200, width: 300,
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 16,
+          boxShadow: '0 12px 36px rgba(0,0,0,0.2)',
+          padding: 16, fontSize: 13, lineHeight: 1.55,
+          color: 'var(--text-secondary)',
+        }}>
+          <div style={{ fontWeight: 800, color: 'var(--text-primary)', marginBottom: 10, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="phone" size={15} /> How voice calls work
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[
+              { icon: 'link', text: 'Calls are peer-to-peer via WebRTC — no call servers, completely free.' },
+              { icon: 'microphone', text: 'Both you and the other person must allow microphone access when prompted.' },
+              { icon: 'globe', text: 'Best supported on Chrome or Edge. Firefox and Safari may have issues.' },
+            ].map((item, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{ flexShrink: 0, display: 'flex', color: 'var(--brand-primary)', marginTop: 2 }}>
+                  <Icon name={item.icon} size={14} />
+                </span>
+                <span>{item.text}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{
+            marginTop: 12, padding: '10px 12px', borderRadius: 10,
+            background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)',
+          }}>
+            <div style={{ fontWeight: 700, color: '#ff9500', marginBottom: 6, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Icon name="warning" size={13} /> Common issues
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {[
+                'No audio → mic may be blocked. Click the lock icon in the browser address bar to allow it.',
+                'Call failed → one side may be on a strict firewall. Try mobile data instead of Wi-Fi.',
+                'Mic in use → close other apps (Zoom, Meet, Teams) that are using your mic.',
+                'Speaker toggle only works in Chrome/Edge — not Firefox/Safari/mobile browsers.',
+              ].map((tip, i) => (
+                <li key={i} style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+
+          <button
+            onClick={() => setShowInfo(false)}
+            style={{
+              marginTop: 12, width: '100%', padding: '7px', borderRadius: 10,
+              background: 'var(--bg-input)', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600, fontSize: 12,
+            }}
+          >
+            Got it
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}

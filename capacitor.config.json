@@ -1,0 +1,21 @@
+{
+  "appId": "com.example.palzy_app",
+  "appName": "Palzy",
+  "webDir": "dist",
+  "server": {
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0d0d14",
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "google.com"
+      ]
+    }
+  }
+}

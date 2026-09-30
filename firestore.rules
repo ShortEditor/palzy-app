@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ──────────────────────────────────────────────
+    function isAuth()    { return request.auth != null; }
+    function uid()       { return request.auth.uid; }
+    function isAdmin()   {
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(uid())).data.isAdmin == true;
+    }
+    function isBanned() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(uid())).data.get('banned', false) == true;
+    }
+
+    // ─── Users ────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuth();
+
+      // Helper: rejects any write that touches privilege-escalation fields.
+      // isAdmin, isVerified, banned can ONLY be written by an existing admin
+      // via the admin panel (which calls setUserAdmin / setUserBanned).
+      // Regular users and the auth flow can never set these.
+      function noPrivilegedFields() {
+        let prohibited = ['isAdmin', 'isVerified', 'banned'];
+        return !request.resource.data.keys().hasAny(prohibited);
+      }
+
+      function noPrivilegedFieldsChanged() {
+        let prohibited = ['isAdmin', 'isVerified', 'banned'];
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(prohibited);
+      }
+
+      // User can create their own document — privileged fields forbidden entirely
+      allow create: if isAuth()
+        && uid() == userId
+        && noPrivilegedFields();
+
+      // User can update their own document — cannot touch privileged fields
+      allow update: if isAuth()
+        && uid() == userId
+        && noPrivilegedFieldsChanged();
+
+      // Follow system: any authenticated user can update ONLY counter fields on any profile
+      allow update: if isAuth()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['followerCount', 'followingCount']);
+
+      // Admin can update anything on any user document
+      // (isAdmin() reads from Firestore itself so a user cannot fake it client-side)
+      allow update: if isAdmin();
+    }
+
+
+    // ─── Posts ────────────────────────────────────────────────
+    match /posts/{postId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && !isBanned()
+        && request.resource.data.authorId == uid();
+      allow delete: if isAuth()
+        && (resource.data.authorId == uid() || isAdmin());
+      // Allow updating counter fields and emojiCounts
+      allow update: if isAuth()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['likeCount', 'commentCount', 'emojiCounts']);
+
+      // ─── Comments (subcollection) ────────────────────────
+      match /comments/{commentId} {
+        allow read:   if isAuth();
+        allow create: if isAuth() && !isBanned()
+          && request.resource.data.authorId == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500;
+        allow delete: if isAuth()
+          && (resource.data.authorId == uid() || isAdmin());
+      }
+    }
+
+    // ─── Likes ──────────────────────────────────────────────
+    // Document ID pattern: {postId}_{userId} for ordinary likes
+    // Only the owning user can create/delete their own likes
+    match /likes/{likeId} {
+      allow read: if isAuth();
+
+      // Ordinary like: likeId = postId_userId, data must have userId == auth.uid
+      allow create: if isAuth()
+        && resource == null
+        && request.resource.data.userId == uid();
+
+      // Delete own like only
+      allow delete: if isAuth()
+        && resource.data.userId == uid();
+
+      // ── Emoji reactions: likeId = postId_rxn_userId ──
+      // Create/update own reaction
+      allow create: if isAuth()
+        && request.resource.data.userId == uid()
+        && request.resource.data.emoji is string;
+
+      // ── Emoji count aggregates: likeId = postId_emojiCounts ──
+      // Any authenticated user can update counts (incremented during reaction toggle)
+      allow create: if isAuth()
+        && likeId.matches('.*_emojiCounts');
+      allow update: if isAuth()
+        && likeId.matches('.*_emojiCounts');
+
+      // ── Notifications: likeId starts with notif_ ──
+      // Only the sender can create a notification (fromUid == auth.uid)
+      allow create: if isAuth()
+        && request.resource.data.isNotification == true
+        && request.resource.data.fromUid == uid();
+
+      // Recipient can read/update/delete their own notifications
+      allow update: if isAuth()
+        && resource.data.isNotification == true
+        && resource.data.notifToUid == uid()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['read']);
+
+      allow delete: if isAuth()
+        && resource.data.isNotification == true
+        && resource.data.notifToUid == uid();
+
+      // ── Story views: likeId = storyview_storyId_viewerId ──
+      allow create: if isAuth()
+        && request.resource.data.isStoryView == true
+        && request.resource.data.viewerId == uid();
+
+      // ── Calls: likeId = call_callId ──
+      // Only the caller can create a call document
+      allow create: if isAuth()
+        && request.resource.data.isCall == true
+        && request.resource.data.callerId == uid();
+
+      // Caller or callee can update a call document
+      allow update: if isAuth()
+        && resource.data.isCall == true
+        && (resource.data.callerId == uid() || resource.data.calleeId == uid());
+
+      // Either party can delete/end a call
+      allow delete: if isAuth()
+        && resource.data.isCall == true
+        && (resource.data.callerId == uid() || resource.data.calleeId == uid());
+    }
+
+    // ─── Follows ────────────────────────────────────────────
+    // Document ID: {followerId}_{followeeId}
+    match /follows/{followId} {
+      allow read: if isAuth();
+
+      // Only the follower (you) can create a follow document
+      allow create: if isAuth()
+        && request.resource.data.followerId == uid();
+
+      // Only the follower can unfollow (delete)
+      allow delete: if isAuth()
+        && resource.data.followerId == uid();
+    }
+
+    // ─── Reports ────────────────────────────────────────────
+    match /reports/{reportId} {
+      allow read:   if isAdmin();
+      allow create: if isAuth() && !isBanned()
+        && request.resource.data.reportedBy == uid()
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 500;
+      allow update: if isAdmin();
+    }
+  }
+}

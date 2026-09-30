@@ -1,0 +1,80 @@
+import { useEffect, useState } from 'react'
+import { getAdminStats } from '../../firebase/admin'
+import { Link } from 'react-router-dom'
+import Icon from '../../components/Icon'
+
+function StatCard({ label, value, icon, color, to }) {
+  const card = (
+    <div style={{
+      background: 'var(--bg-card)',
+      border: `1px solid var(--border-subtle)`,
+      borderRadius: 'var(--radius-lg)',
+      padding: 'var(--space-6)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 'var(--space-2)',
+      transition: 'all var(--dur-fast)',
+      cursor: to ? 'pointer' : 'default',
+      textDecoration: 'none',
+      position: 'relative',
+      overflow: 'hidden',
+    }}
+    onMouseEnter={e => { if (to) { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = 'translateY(-2px)' }}}
+    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.transform = '' }}
+    >
+      {/* Glow blob */}
+      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: color, opacity: 0.12, filter: 'blur(20px)' }} />
+
+      <div style={{ color, marginBottom: 'var(--space-1)' }}><Icon name={icon} size={28} /></div>
+      <div style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
+        {value ?? <div className="skeleton" style={{ width: 60, height: 36, borderRadius: 4 }} />}
+      </div>
+      <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</div>
+    </div>
+  )
+
+  return to ? <Link to={to} style={{ textDecoration: 'none' }}>{card}</Link> : card
+}
+
+export default function AdminDashboard() {
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getAdminStats()
+      .then(setStats)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  return (
+    <div style={{ padding: 'var(--space-8)', maxWidth: 900 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 'var(--space-8)' }}>
+        <h1 style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 800, marginBottom: 'var(--space-2)' }}>Dashboard</h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+          Overview of Palzy — {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        </p>
+      </div>
+
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-5)', marginBottom: 'var(--space-10)' }}>
+        <StatCard label="Total Users"   icon="users"   value={loading ? null : stats?.totalUsers}   color="var(--brand-primary)" to="/admin/users" />
+        <StatCard label="Total Posts"   icon="image"   value={loading ? null : stats?.totalPosts}   color="var(--brand-accent)"  to="/admin/posts" />
+        <StatCard label="Open Reports"  icon="flag"    value={loading ? null : stats?.pendingReports} color="var(--brand-red)"     to="/admin/reports" />
+      </div>
+
+      {/* Quick actions */}
+      <div style={{ marginBottom: 'var(--space-6)' }}>
+        <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>Quick Actions</h2>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <Link to="/admin/users"   className="btn btn-outline"><Icon name="users"         size={15} /> Manage Users</Link>
+          <Link to="/admin/posts"   className="btn btn-outline"><Icon name="image"         size={15} /> Manage Posts</Link>
+          <Link to="/admin/reports" className="btn btn-danger" ><Icon name="flag"          size={15} /> Review Reports</Link>
+          <Link to="/"             className="btn btn-ghost"  ><Icon name="home"          size={15} /> Go to Feed</Link>
+        </div>
+      </div>
+
+    </div>
+  )
+}

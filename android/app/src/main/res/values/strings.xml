@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Palzy</string>
+    <string name="title_activity_main">Palzy</string>
+    <string name="package_name">com.example.palzy_app</string>
+    <string name="custom_url_scheme">com.example.palzy_app</string>
+</resources>

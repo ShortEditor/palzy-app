@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "203911598294",
+    "firebase_url": "https://social-media-d84ea-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "social-media-d84ea",
+    "storage_bucket": "social-media-d84ea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:203911598294:android:f9c78fa67a2f9758a4b977",
+        "android_client_info": {
+          "package_name": "com.example.palzy_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "203911598294-1muq395s2ldgbuijbsn8vrpthnorvtk1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.palzy_app",
+            "certificate_hash": "d7b1a17552b8a39d9415c58e73045a6e9deb25f2"
+          }
+        },
+        {
+          "client_id": "203911598294-4qdshmujuo64cmj1i54i0qfou4t71h6b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQdZ-IvnRwQc7Ws63bnuM0yffBpvy7-M8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "203911598294-4qdshmujuo64cmj1i54i0qfou4t71h6b.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

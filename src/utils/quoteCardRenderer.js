@@ -1,0 +1,350 @@
+// ─── Quote Card Canvas Renderer ─────────────────────────────────────────────
+
+// ─── Ratio Definitions ───────────────────────────────────────────────────────
+export const RATIOS = {
+  square:    { id: 'square',    label: '1:1',  W: 1080, H: 1080, icon: '□' },
+  portrait:  { id: 'portrait',  label: '4:5',  W: 1080, H: 1350, icon: '▬' },
+  landscape: { id: 'landscape', label: '16:9', W: 1080, H: 608,  icon: '▭' },
+}
+export const RATIO_LIST = Object.values(RATIOS)
+export const DEFAULT_RATIO = 'portrait'
+
+// ─── Template Definitions ────────────────────────────────────────────────────
+export const TEMPLATES = {
+  midnight: {
+    id: 'midnight', name: 'Midnight',
+    bg: (ctx, W, H) => {
+      const g = ctx.createLinearGradient(0, 0, W, H)
+      g.addColorStop(0, '#0f0c29'); g.addColorStop(0.5, '#302b63'); g.addColorStop(1, '#24243e')
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    },
+    textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.55)', accentColor: '#a78bfa',
+  },
+  aurora: {
+    id: 'aurora', name: 'Aurora',
+    bg: (ctx, W, H) => {
+      const g = ctx.createLinearGradient(0, 0, W, H)
+      g.addColorStop(0, '#4f46e5'); g.addColorStop(0.45, '#a855f7'); g.addColorStop(1, '#f97316')
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    },
+    textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.6)', accentColor: '#fde68a',
+  },
+  forest: {
+    id: 'forest', name: 'Forest',
+    bg: (ctx, W, H) => {
+      const g = ctx.createLinearGradient(0, 0, W, H)
+      g.addColorStop(0, '#0d2b1f'); g.addColorStop(1, '#065f46')
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    },
+    textColor: '#ecfdf5', mutedColor: 'rgba(236,253,245,0.55)', accentColor: '#34d399',
+  },
+  ember: {
+    id: 'ember', name: 'Ember',
+    bg: (ctx, W, H) => {
+      const g = ctx.createLinearGradient(0, 0, W, H)
+      g.addColorStop(0, '#450a0a'); g.addColorStop(1, '#c2410c')
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    },
+    textColor: '#fff7ed', mutedColor: 'rgba(255,247,237,0.55)', accentColor: '#fb923c',
+  },
+  slate: {
+    id: 'slate', name: 'Slate',
+    bg: (ctx, W, H) => {
+      ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H)
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1
+      for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke() }
+      for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke() }
+    },
+    textColor: '#f1f5f9', mutedColor: 'rgba(241,245,249,0.45)', accentColor: '#7c3aed',
+  },
+  ivory: {
+    id: 'ivory', name: 'Ivory',
+    bg: (ctx, W, H) => {
+      ctx.fillStyle = '#faf7f2'; ctx.fillRect(0, 0, W, H)
+      ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth = 3
+      ctx.strokeRect(36, 36, W - 72, H - 72)
+    },
+    textColor: '#1c1917', mutedColor: 'rgba(28,25,23,0.45)', accentColor: '#7c3aed',
+  },
+  cosmos: {
+    id: 'cosmos', name: 'Cosmos',
+    bg: (ctx, W, H) => {
+      ctx.fillStyle = '#1a0533'; ctx.fillRect(0, 0, W, H)
+      const rng = mulberry32(42)
+      for (let i = 0; i < 180; i++) {
+        const x = rng() * W, y = rng() * H, r = rng() * 2 + 0.5
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(255,255,255,${rng() * 0.4 + 0.1})`; ctx.fill()
+      }
+      const vg = ctx.createRadialGradient(W/2, H/2, 200, W/2, H/2, W * 0.9)
+      vg.addColorStop(0, 'transparent'); vg.addColorStop(1, 'rgba(10,0,20,0.6)')
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H)
+    },
+    textColor: '#f5f0ff', mutedColor: 'rgba(245,240,255,0.5)', accentColor: '#e879f9',
+  },
+  rose: {
+    id: 'rose', name: 'Rose',
+    bg: (ctx, W, H) => {
+      const g = ctx.createLinearGradient(0, 0, W, H)
+      g.addColorStop(0, '#4a1232'); g.addColorStop(1, '#9f1239')
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    },
+    textColor: '#fff1f2', mutedColor: 'rgba(255,241,242,0.55)', accentColor: '#fb7185',
+  },
+}
+export const TEMPLATE_LIST = Object.values(TEMPLATES)
+
+// ─── Font Definitions ────────────────────────────────────────────────────────
+export const FONTS = {
+  playfair:   { id: 'playfair',   name: 'Playfair',  family: 'Playfair Display', weight: '700', style: 'normal' },
+  inter_bold: { id: 'inter_bold', name: 'Bold Sans',  family: 'Inter',            weight: '800', style: 'normal' },
+  lora:       { id: 'lora',       name: 'Lora',       family: 'Lora',             weight: '400', style: 'italic' },
+  space_mono: { id: 'space_mono', name: 'Mono',       family: 'Space Mono',       weight: '400', style: 'normal' },
+  dancing:    { id: 'dancing',    name: 'Script',     family: 'Dancing Script',   weight: '600', style: 'normal' },
+}
+export const FONT_LIST = Object.values(FONTS)
+
+// ─── Layout Definitions ──────────────────────────────────────────────────────
+export const LAYOUTS = {
+  centered:    { id: 'centered',    name: 'Centered',    icon: '⊡' },
+  bottom_attr: { id: 'bottom_attr', name: 'Bottom Name', icon: '⊟' },
+  top_quote:   { id: 'top_quote',   name: 'Quote Mark',  icon: '❝' },
+  minimal:     { id: 'minimal',     name: 'Minimal',     icon: '⊠' },
+}
+export const LAYOUT_LIST = Object.values(LAYOUTS)
+
+// ─── Seeded RNG ───────────────────────────────────────────────────────────────
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// ─── Font Loader ─────────────────────────────────────────────────────────────
+const loadedFonts = new Set()
+export async function ensureFontLoaded(fontId) {
+  if (loadedFonts.has(fontId)) return
+  const def = FONTS[fontId]
+  if (!def || def.family === 'Inter') { loadedFonts.add(fontId); return }
+  try {
+    await document.fonts.ready
+    const spec = `${def.style === 'italic' ? 'italic ' : ''}${def.weight} 40px "${def.family}"`
+    await document.fonts.load(spec)
+    loadedFonts.add(fontId)
+  } catch (e) {
+    console.warn('Font load failed for', fontId, e)
+  }
+}
+
+// ─── Text Wrapping with Auto-Size ────────────────────────────────────────────
+function measureAndWrap(ctx, text, maxWidth) {
+  const words = text.split(' ')
+  const lines = []
+  let current = ''
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current); current = word
+    } else {
+      current = test
+    }
+  }
+  if (current) lines.push(current)
+  return lines
+}
+
+function autoSizeFont(ctx, text, maxWidth, maxHeight, fontStr, maxPx = 80, minPx = 24, step = 4) {
+  let size = maxPx
+  while (size >= minPx) {
+    ctx.font = fontStr.replace('__SIZE__', size)
+    const lines = measureAndWrap(ctx, text, maxWidth)
+    const totalH = lines.length * size * 1.45
+    if (totalH <= maxHeight) return { size, lines }
+    size -= step
+  }
+  ctx.font = fontStr.replace('__SIZE__', minPx)
+  return { size: minPx, lines: measureAndWrap(ctx, text, maxWidth) }
+}
+
+// ─── Main Render Function ─────────────────────────────────────────────────────
+export function renderQuoteCard(canvas, { text, attribution, templateId, fontId, layoutId, ratioId }) {
+  const tmpl   = TEMPLATES[templateId]   ?? TEMPLATES.midnight
+  const font   = FONTS[fontId]           ?? FONTS.playfair
+  const layout = LAYOUTS[layoutId]       ?? LAYOUTS.centered
+  const ratio  = RATIOS[ratioId]         ?? RATIOS.portrait
+
+  const W = ratio.W
+  const H = ratio.H
+
+  const ctx = canvas.getContext('2d')
+  canvas.width  = W
+  canvas.height = H
+  ctx.clearRect(0, 0, W, H)
+
+  // 1. Draw background (pass W, H so gradients/patterns adapt)
+  tmpl.bg(ctx, W, H)
+  _addNoise(ctx, W, H)
+
+  const PAD   = Math.round(W * 0.093)  // ~100px at 1080w, scales with width
+  const inner = W - PAD * 2
+
+  const fontBase = `${font.style === 'italic' ? 'italic ' : ''}__SIZE__px "${font.family}", serif`
+
+  if (layout.id === 'centered') {
+    _drawCentered(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H)
+  } else if (layout.id === 'bottom_attr') {
+    _drawBottomAttr(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H)
+  } else if (layout.id === 'top_quote') {
+    _drawTopQuote(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H)
+  } else if (layout.id === 'minimal') {
+    _drawMinimal(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H)
+  }
+
+  // Watermark — Baloo 2 font, 75% opacity
+  const prevAlpha = ctx.globalAlpha
+  ctx.globalAlpha = 0.75
+  ctx.font = `600 30px "Baloo 2", "Inter", sans-serif`
+  ctx.fillStyle = tmpl.mutedColor
+  ctx.textAlign = 'center'
+  ctx.fillText('palzy.website', W / 2, H - 44)
+  ctx.globalAlpha = prevAlpha
+}
+
+// ─── Layout Drawers (all accept W, H) ────────────────────────────────────────
+function _drawCentered(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H) {
+  const maxH = H * 0.6
+  const { size, lines } = autoSizeFont(ctx, text, inner, maxH, fontBase)
+  const lh = size * 1.45
+  const totalH = lines.length * lh
+  let y = (H - totalH) / 2
+
+  ctx.textAlign = 'center'
+  ctx.fillStyle = tmpl.textColor
+  for (const line of lines) {
+    ctx.font = fontBase.replace('__SIZE__', size)
+    ctx.fillText(line, W / 2, y + size)
+    y += lh
+  }
+  if (attribution) {
+    ctx.font = `500 36px "Inter", sans-serif`
+    ctx.fillStyle = tmpl.mutedColor
+    ctx.fillText(`— ${attribution}`, W / 2, y + 60)
+  }
+}
+
+function _drawBottomAttr(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H) {
+  const maxH = H * 0.55
+  const { size, lines } = autoSizeFont(ctx, text, inner, maxH, fontBase)
+  const lh = size * 1.45
+
+  let y = PAD + 80
+  ctx.textAlign = 'left'
+  ctx.fillStyle = tmpl.textColor
+  for (const line of lines) {
+    ctx.font = fontBase.replace('__SIZE__', size)
+    ctx.fillText(line, PAD, y + size)
+    y += lh
+  }
+  if (attribution) {
+    ctx.font = `500 34px "Inter", sans-serif`
+    ctx.fillStyle = tmpl.accentColor
+    ctx.textAlign = 'right'
+    ctx.fillText(`— ${attribution}`, W - PAD, H - PAD - 60)
+  }
+}
+
+function _drawTopQuote(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H) {
+  const quoteMarkSize = Math.min(280, H * 0.32)
+  ctx.font = `bold ${quoteMarkSize}px "Playfair Display", serif`
+  ctx.fillStyle = tmpl.accentColor
+  ctx.globalAlpha = 0.18
+  ctx.textAlign = 'left'
+  ctx.fillText('\u201C', PAD - 20, PAD + quoteMarkSize * 0.78)
+  ctx.globalAlpha = 1
+
+  const startY = PAD + quoteMarkSize * 0.88
+  const maxH = H - startY - PAD - 120
+  const { size, lines } = autoSizeFont(ctx, text, inner, maxH, fontBase, 72)
+  const lh = size * 1.45
+
+  let y = startY
+  ctx.textAlign = 'center'
+  ctx.fillStyle = tmpl.textColor
+  for (const line of lines) {
+    ctx.font = fontBase.replace('__SIZE__', size)
+    ctx.fillText(line, W / 2, y + size)
+    y += lh
+  }
+  if (attribution) {
+    ctx.fillStyle = tmpl.accentColor
+    ctx.fillRect(W / 2 - 40, y + 50, 80, 3)
+    ctx.font = `600 36px "Inter", sans-serif`
+    ctx.fillStyle = tmpl.mutedColor
+    ctx.textAlign = 'center'
+    ctx.fillText(attribution.toUpperCase(), W / 2, y + 110)
+  }
+}
+
+function _drawMinimal(ctx, text, attribution, tmpl, fontBase, inner, PAD, W, H) {
+  ctx.fillStyle = tmpl.accentColor
+  ctx.fillRect(PAD, PAD, 6, 120)
+
+  const maxH = H * 0.55
+  const { size, lines } = autoSizeFont(ctx, text, inner, maxH, fontBase)
+  const lh = size * 1.45
+
+  let y = PAD + 160
+  ctx.textAlign = 'left'
+  ctx.fillStyle = tmpl.textColor
+  for (const line of lines) {
+    ctx.font = fontBase.replace('__SIZE__', size)
+    ctx.fillText(line, PAD + 18, y + size)
+    y += lh
+  }
+  if (attribution) {
+    ctx.font = `400 32px "Inter", sans-serif`
+    ctx.fillStyle = tmpl.mutedColor
+    ctx.textAlign = 'left'
+    ctx.fillText(`— ${attribution}`, PAD + 18, y + 70)
+  }
+}
+
+/**
+ * Generates a subtle monochrome grain/noise pattern and overlays it.
+ * This breaks up color banding in canvas linear/radial gradients.
+ */
+function _addNoise(ctx, W, H) {
+  try {
+    const noiseCanvas = document.createElement('canvas')
+    noiseCanvas.width = 128
+    noiseCanvas.height = 128
+    const nCtx = noiseCanvas.getContext('2d')
+    const imgData = nCtx.createImageData(128, 128)
+    const data = imgData.data
+    
+    for (let i = 0; i < data.length; i += 4) {
+      // Extremely subtle monochrome grain
+      const val = (Math.random() - 0.5) * 14  // range [-7, 7]
+      data[i]     = 128 + val // R
+      data[i + 1] = 128 + val // G
+      data[i + 2] = 128 + val // B
+      data[i + 3] = 8         // Alpha: very light (~3% opacity)
+    }
+    nCtx.putImageData(imgData, 0, 0)
+
+    const pattern = ctx.createPattern(noiseCanvas, 'repeat')
+    if (pattern) {
+      ctx.save()
+      ctx.globalCompositeOperation = 'overlay'
+      ctx.fillStyle = pattern
+      ctx.fillRect(0, 0, W, H)
+      ctx.restore()
+    }
+  } catch (err) {
+    console.warn('Could not render dither noise:', err)
+  }
+}
+
